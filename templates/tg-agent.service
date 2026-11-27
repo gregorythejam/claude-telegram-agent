@@ -1,0 +1,24 @@
+[Unit]
+Description=Claude Code Telegram-агент
+After=network-online.target
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+# Claude с каналом Telegram нужен терминал, поэтому он работает внутри tmux.
+# Посмотреть экран: tmux -L tg-agent attach -t tg-agent   (выйти: Ctrl+B, потом D)
+Type=forking
+Environment=TELEGRAM_STATE_DIR=%h/.claude/channels/telegram
+Environment=TELEGRAM_SERVICE=tg-agent
+Environment=TELEGRAM_AGENT_WORK=%h/telegram-agent
+Environment=TELEGRAM_ARCHIVE_DIR=%h/telegram-agent/архив-переписки
+# Время в архиве. Поменяйте, если владелец живёт в другом часовом поясе.
+Environment=TZ=Europe/Moscow
+# Режим разрешений: auto (Claude сам решает, что безопасно) или default (спрашивает кнопками в Telegram).
+Environment=TG_PERMISSION_MODE=auto
+ExecStart=/usr/bin/tmux -L tg-agent new-session -d -s tg-agent -x 160 -y 50 -c %h/telegram-agent "bash -lc 'exec %h/.local/share/telegram-agent/templates/start.sh'"
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=default.target

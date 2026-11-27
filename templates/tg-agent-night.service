@@ -1,0 +1,16 @@
+[Unit]
+Description=Ночная уборка Telegram-агента: напоминание про /new и ревизия дел
+
+[Service]
+Type=oneshot
+Environment=TELEGRAM_SERVICE=tg-agent
+Environment=TELEGRAM_STATE_DIR=%h/.claude/channels/telegram
+Environment=TELEGRAM_AGENT_WORK=%h/telegram-agent
+Environment=TELEGRAM_ARCHIVE_DIR=%h/telegram-agent/архив-переписки
+Environment=TZ=Europe/Moscow
+# 1 — каждую ночь Claude (модель Sonnet) сверяет переписку за день с файлами дел и дописывает
+# недостающее. Это тратит немного лимитов подписки. 0 — только напоминание про /new (бесплатно).
+Environment=TG_NIGHT_REVISE=0
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/python3 %h/.local/share/telegram-agent/agent.py night
+TimeoutStartSec=1800
