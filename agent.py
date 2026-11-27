@@ -100,8 +100,12 @@ def current_session():
                 return p
         except (OSError, ValueError, KeyError):
             pass
-    files = sorted(proj_dir().glob("*.jsonl"), key=lambda p: p.stat().st_mtime)
-    return files[-1] if files else None
+    # В папке могут быть и обычные сессии человека: берём самую свежую, где есть сообщения из Telegram.
+    mark = b'"content":"<channel source=\\"plugin:telegram'
+    for p in sorted(proj_dir().glob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True):
+        if mark in p.read_bytes():
+            return p
+    return None
 
 
 def tail_lines(path, size=4_000_000):
