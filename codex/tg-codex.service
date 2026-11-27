@@ -1,0 +1,21 @@
+[Unit]
+Description=Telegram-бот для Codex CLI
+After=network-online.target
+# Без токена служба не стартует: сначала настройка (telegram_codex.py setup).
+ConditionPathExists=%h/.config/tg-codex/token
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+ExecStart=/usr/bin/python3 %h/.local/share/telegram-agent/codex/telegram_codex.py
+# Рабочая папка агента: правила AGENTS.md, дела, архив переписки.
+Environment=TG_CODEX_WORKDIR=%h/codex-agent
+# Время в архиве. Поменяйте, если владелец живёт в другом часовом поясе.
+Environment=TZ=Europe/Moscow
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Restart=on-failure
+RestartSec=15
+UMask=0077
+
+[Install]
+WantedBy=default.target
