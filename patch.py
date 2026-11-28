@@ -8,6 +8,8 @@
   document   — ответ может отправить фото файлом, без сжатия Telegram
   commands   — команды /now, /stop, /usage, /today для владельца (выполняет agent.py)
   restart    — «✅ Перезапустился» после перезапуска с тем же разговором (agent.py restart)
+  typing     — «печатает…» держится всё время, пока бот работает, а не 5 секунд
+               (конец работы отмечает Stop-хук из templates/tg-agent.settings.json)
 
 Запуск:  python3 patch.py            внести правки (повторный запуск безопасен)
          python3 patch.py --check    только показать, какие правки стоят
@@ -18,6 +20,7 @@
 плагин продолжает работать как официальный. Перед первой правкой сохраняется server.ts.orig.
 """
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -233,6 +236,34 @@ function forwardMeta(ctx: Context): Record<string, string> {
 
 type AttachmentMeta = {""".replace("TAG", TAG)
 
+TYPING_HELPER = """// TAG: typing — «печатает…» обновляется каждые 4 с, пока Claude работает над сообщением.
+// Конец хода отмечает Stop-хук в настройках бота: touch $TELEGRAM_STATE_DIR/turn-done.
+// Без хука индикатор гаснет сам через 30 минут.
+const TURN_DONE_FILE = join(STATE_DIR, 'turn-done')
+const TYPING_LIMIT_MS = 30 * 60_000
+const typingLoops = new Map<string, ReturnType<typeof setInterval>>()
+function turnDoneAt(): number {
+  try { return statSync(TURN_DONE_FILE).mtimeMs } catch { return 0 }
+}
+function startTyping(chat_id: string): void {
+  const started = Date.now()
+  const prev = typingLoops.get(chat_id)
+  if (prev) clearInterval(prev)
+  const timer = setInterval(() => {
+    if (turnDoneAt() > started || Date.now() - started > TYPING_LIMIT_MS) {
+      clearInterval(timer)
+      if (typingLoops.get(chat_id) === timer) typingLoops.delete(chat_id)
+      return
+    }
+    void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
+  }, 4000)
+  typingLoops.set(chat_id, timer)
+  void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})
+}
+
+async function handleInbound(
+""".replace("TAG", TAG)
+
 # Правка = (название, что делает, [(якорь в исходнике, чем заменить)]).
 # Якорь должен встречаться ровно один раз; иначе правка пропускается целиком.
 PATCHES = [
@@ -284,6 +315,12 @@ PATCHES = [
     ("restart", "подтверждение после перезапуска", [
         ("            { scope: { type: 'all_private_chats' } },\n          ).catch(() => {})\n", RESTART_CONFIRM),
     ]),
+    ("typing", "«печатает…», пока бот работает", [
+        # Сначала замена вызова: в TYPING_HELPER та же строка, её трогать нельзя.
+        ("  void bot.api.sendChatAction(chat_id, 'typing').catch(() => {})\n",
+         f"  startTyping(chat_id) // {TAG}: typing\n"),
+        ("async function handleInbound(\n", TYPING_HELPER),
+    ]),
 ]
 
 
@@ -325,6 +362,23 @@ def apply(text):
     return text, report
 
 
+STOP_HOOK = 'touch "${TELEGRAM_STATE_DIR:-$HOME/.claude/channels/telegram}/turn-done"'
+
+
+def ensure_stop_hook():
+    """Правке typing нужен Stop-хук в настройках бота. Дописать, если его там нет."""
+    f = Path.home() / ".claude/tg-agent.settings.json"
+    if not f.exists():
+        return
+    d = json.loads(f.read_text())
+    stop = d.setdefault("hooks", {}).setdefault("Stop", [])
+    if any(h.get("command") == STOP_HOOK for e in stop for h in e.get("hooks", [])):
+        return
+    stop.append({"matcher": "", "hooks": [{"type": "command", "command": STOP_HOOK}]})
+    f.write_text(json.dumps(d, ensure_ascii=False, indent=2) + "\n")
+    print(f"В {f} добавлен Stop-хук: «печатает…» гаснет, когда бот закончил.")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--check", action="store_true")
@@ -334,6 +388,8 @@ def main():
     if not dirs:
         sys.exit("Плагин telegram@claude-plugins-official не установлен. Сначала: claude plugin install telegram@claude-plugins-official")
     failed = False
+    if not args.check and not args.plugin_dir:
+        ensure_stop_hook()
     for d in dirs:
         server = d / "server.ts"
         old = server.read_text()

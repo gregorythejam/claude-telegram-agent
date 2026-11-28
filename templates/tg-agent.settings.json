@@ -1,5 +1,18 @@
 {
   "enabledPlugins": {
     "telegram@claude-plugins-official": true
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "touch \"${TELEGRAM_STATE_DIR:-$HOME/.claude/channels/telegram}/turn-done\""
+          }
+        ]
+      }
+    ]
   }
 }
